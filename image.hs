@@ -1,10 +1,41 @@
 import System.Environment
 import Linear
+import Control.Lens
 
--- main = putStrLn $ makePicture 200 100
+type Vec   = V3 Double
+type Color = V3 Int
+
+data Ray = Ray {
+  orig :: Vec,
+  dir  :: Vec
+               } deriving (Show)
+
+pointAtParam :: Ray -> Double -> Vec
+pointAtParam r t = orig r + t*^(dir r)
+
 main = do
   n <- getProgName
-  writeFile (n++".ppm") $ makePicture 500 250
+  writeFile (n++".ppm") $ makePicture 200 100
+
+-- Helper functions
+makePixel :: Color -> String
+makePixel (V3 r g b) = show r ++ " " ++ show g ++ " " ++ show b ++ "\n"
+
+rescale :: Double -> Int
+rescale = floor . (255.99*) 
+
+fromVec :: Vec -> Color
+fromVec = fmap rescale
+
+
+-- Practice functions
+
+color :: Ray -> Color
+color r = fromVec $ lerp t v w
+  where
+    t = 0.5*(1-(signorm (dir r) ^. _y))
+    v = V3 1 1 1
+    w = V3 0.5 0.7 1
 
 makePicture :: Int -> Int -> String
 makePicture w h = header ++ body
@@ -13,13 +44,14 @@ makePicture w h = header ++ body
       ++ show w ++ " "
       ++ show h ++ "# width height (pixels)\n"
       ++ "255 # max intensity\n\n"
+    lowerLeftCorner = V3 (-2) (-1) (-1)
+    horizontal = V3 4 0 0
+    vertical = V3 0 2 0
     body = concat $ do
       j <- map fromIntegral [h-1,h-2..0]
       i <- map fromIntegral [0..w-1]
-      let r = floor $ 255.99* (i/(fromIntegral w))
-      let g = floor $ 255.99* (j/(fromIntegral h))
-      let b = floor $ 255.99* (0.7)
-      return $ makePixel r g b
-
-makePixel :: Int -> Int -> Int -> String
-makePixel r g b = show r ++ " " ++ show g ++ " " ++ show b ++ "\n"
+      let u = i/(fromIntegral w)
+      let v = j/(fromIntegral h)
+      let r = Ray {orig=zero, dir= lowerLeftCorner + u*^horizontal + v*^vertical}
+      let c = color r
+      return $ makePixel c
