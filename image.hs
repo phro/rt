@@ -31,11 +31,32 @@ fromVec = fmap rescale
 -- Practice functions
 
 color :: Ray -> Color
-color r = fromVec $ lerp t v w
+color r =
+  case hitSphere (V3 0 0 (-1)) 0.5 r of
+    Just t -> fromVec $ 0.5*^ (signorm (pointAtParam r t-V3 0 0 (-1)) + V3 1 1 1)
+    _      -> fromVec $ lerp s v w
   where
-    t = 0.5*(1-(signorm (dir r) ^. _y))
+    s = 0.5*(1-((dir r) ^. _y))
     v = V3 1 1 1
     w = V3 0.5 0.7 1
+
+hitSphere :: Vec -> Double -> Ray -> Maybe Double
+hitSphere centre radius r =
+  if (d < 0)
+     then Nothing
+     else if x> 0 then Just x else Nothing
+       where
+         x = smallestRoot a b c d 
+         k = orig r - centre
+         a = dot (dir r) (dir r)
+         b = 2*dot k (dir r)
+         c = dot k k-(radius)^2
+         d = b^2 - 4*a*c
+         smallestRoot a' b' c' d' = 1/(2*a') * (foldr1 min [l,r])
+           where
+             l = -b' - y
+             r = -b' + y
+             y = sqrt d'
 
 makePicture :: Int -> Int -> String
 makePicture w h = header ++ body
