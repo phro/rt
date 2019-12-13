@@ -1,6 +1,7 @@
 import System.Environment
 import Linear
 import Control.Lens
+import System.Random
 
 type Color = V3 Double
 
@@ -8,6 +9,9 @@ data Ray = Ray
   {orig :: V3 Double
   ,dir  :: V3 Double
   } deriving (Show)
+
+getGens :: (RandomGen g) => g -> [g]
+getGens g = let (g1,g2)=split g in g1:getGens g2
 
 infinity :: Double
 infinity = (read "Infinity")::Double
@@ -87,8 +91,6 @@ data Camera = Camera
   ,horizontal :: V3 Double
   ,vertical :: V3 Double
   ,origin :: V3 Double
-  ,width :: !Int
-  ,height :: !Int
   }
 
 getRay :: Camera -> V2 Double -> Ray
@@ -97,14 +99,6 @@ getRay c (V2 u v) = Ray
   ,dir = lowerLeftCorner c + u*^horizontal c + v*^vertical c - origin c
   }
 
- -- Extraneous function
-getRayInt :: Camera -> V2 Int -> Ray
-getRayInt c (V2 i j) = Ray
-  {orig = origin c
-  ,dir = lowerLeftCorner c
-       + (fromIntegral i/(fromIntegral $ width c))*^horizontal c
-       + (fromIntegral j/(fromIntegral $ height c))*^vertical c - origin c
-  }
 
 -- Practice functions
 
@@ -118,18 +112,32 @@ color o r =
     v = V3 1 1 1
     w = V3 0.5 0.7 1
 
-perturb :: (Camera -> V2 Double -> Color) -- raycaster
-        -> Camera
-        -> V2 Double           -- pixel screen coordinate
-        -> [V2 Double]         -- list of pixel perturbations
-        -> Color
-perturb f ca co ps
-  = recip (fromIntegral $ length ps) *^ (sum $ fmap (f ca . (+co).
-    (\(V2 u v )->
-      V2 (u/(fromIntegral $ width ca)) (v/(fromIntegral $ height ca)))) ps)
+type Raycaster a = a -> Camera -> (V2 Double) -> Color
 
-makePicture :: Int -> Int -> Int -> String
-makePicture w h aa = header ++ body
+raycast :: (EMO a) => Raycaster a
+raycast o c v = color o (getRay c v)
+
+antialias :: (RandomGen g, EMO a)
+          => Raycaster a
+          -> Int         -- sqrt number of samples
+          -> (Int,Int)   -- resolution of image
+          -> g
+          -> Raycaster a
+antialias r n (w,h) g o c v
+  = recip (fromIntegral n) *^ sum $ map (r o c) $ map (v+) $
+    take n $ (map (\(x,y)-> V2 x y)) $ zip us vs 
+      where
+        (g1,g2)=split g
+        us = randomRs (0,w') g1
+        vs = randomRs (0,h') g2
+        w'=recip . fromIntegral $ w
+        h'=recip . fromIntegral $ h
+    {- [let
+    in V2 (x/w') (y/h') 
+      | let l=map fromIntegral [0..n-1], x<-l, y<-l] -}
+
+makePicture :: (RandomGen g) => Int -> Int -> Int -> g -> String
+makePicture aa w h g = header ++ body
   where
     header = "P3\n"
       ++ show w ++ " "
@@ -140,8 +148,6 @@ makePicture w h aa = header ++ body
       ,horizontal = V3 4 0 0
       ,vertical = V3 0 2 0
       ,origin = zero
-      ,width = w
-      ,height = h
       }
     world =
       [Sphere (V3 0 0 (-1)) 0.5
@@ -150,15 +156,26 @@ makePicture w h aa = header ++ body
     body = concat $ do
       j <- map fromIntegral [h-1,h-2..0]
       i <- map fromIntegral [0..w-1]
+      let g' = getGens g !! (i+j*h `mod` 10)
       let n = fromIntegral aa
       let jigs = [V2 (k/n)(l/n) | k<-[0..n-1],l<-[0..n-1]]
       let u = fromIntegral i
       let v = fromIntegral j
       let pos = V2 (u/(fromIntegral w)) (v/(fromIntegral h))
-      return . makePixel $ perturb (
-        \ca co -> color world (getRay ca co)
-                                   ) cam pos jigs
+      -- return . makePixel $ raycast world cam pos
+      return . makePixel $ antialias raycast aa (w,h) g' world cam pos
 
 main = do
+  cs<-getArgs
+  let [a,w,h]=
+        case cs of
+          []         -> [1,400,200]
+          [a1]       -> [read a1,400,200]
+          [a1,a2,a3] -> [read a1,read a2,read a3]
+          _          -> error "Supply zero, one, or three arguments."
+        :: [Int]
   n <- getProgName
-  writeFile (n++".ppm") $ makePicture 400 200 4
+  g <- getStdGen
+  let (g1,g2)=split g
+  writeFile (n++"_"++show w++"×"++show h++"_aa="++show a++"_1.ppm") $ makePicture a w h g1
+  writeFile (n++"_"++show w++"×"++show h++"_aa="++show a++"_2.ppm") $ makePicture a w h g2
